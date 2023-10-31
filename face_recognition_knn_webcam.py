@@ -1,6 +1,6 @@
 """
 完全体代码。
-构造了用于识别的face_recognition_gui类，再类内实现了录入照片、KNN分类器的训练、识别人脸三个功能。
+构造了用于识别的face_recognition_gui类，在类内实现了录入照片、KNN分类器的训练、识别人脸三个功能。
 初始化该类时传入cv2调用摄像头得到的camera，拍摄的每帧图片通过成员变量self.frame进行全局传递和感知。
 """
 
@@ -145,5 +145,5 @@ if __name__ == "__main__":
     video_capture = cv2.VideoCapture(0)
 
     gui = face_recognition_gui(video_capture)
-    gui.Scan_face()
+    gui.scan_face()
     gui.destroy()
