@@ -1,7 +1,7 @@
 """
 完全体代码。
 构造了用于识别的face_recognition_gui类，在类内实现了录入照片、KNN分类器的训练、识别人脸三个功能。
-初始化该类时传入cv2调用摄像头得到的camera，拍摄的每帧图片通过成员变量self.frame进行全局传递和感知。
+初始化该类时传入cv2调用摄像头得到的camera，用于全局传递和感知。
 """
 
 import math
@@ -24,13 +24,12 @@ ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
 class face_recognition_gui(object):
     def __init__(self, camera: cv2.VideoCapture) -> None:
         self.camera = camera
-        self.success, self.frame = camera.read()
 
-    def get_new_face(self, filepath="data", total_num=100, name=None):
+    def get_new_face(self, filepath="knn_examples/train", total_num=100, name=None):
         """录入人脸照片
 
         Args:
-            filepath (str, optional): 存放照片的路径. Defaults to 'data'.
+            filepath (str, optional): 存放照片的路径. Defaults to 'knn_examples/train'.
             total_num (int, optional): 拍摄总数. Defaults to 100.
             name (str, optional): 录入人脸姓名. Defaults to None.
         """
@@ -38,16 +37,17 @@ class face_recognition_gui(object):
         print("正在从摄像头录入新人脸信息 \n")
 
         # 存在目录就清空，不存在就创建，确保最后存在空的目录
+        filepath = os.path.join(filepath, name)
         if not os.path.exists(filepath):
-            os.mkdir(filepath)
+            os.makedirs(filepath)
         else:
             shutil.rmtree(filepath)
-            os.mkdir(filepath)
+            os.makedirs(filepath)
 
         sample_num = 0  # 已经获得的样本数
 
-        while True:
-            frame = self.frame.copy()
+        while self.camera.isOpened():
+            success, frame = self.camera.read()
             face_bounding_boxes = face_recognition.face_locations(frame)
 
             # 框选人脸，for循环保证一个能检测的实时动态视频流
@@ -58,14 +58,12 @@ class face_recognition_gui(object):
                 sample_num += 1
 
                 # 保存的是没加框的图片
-                cv2.imwrite(
-                    filepath + "/" + name + "." + str(sample_num) + ".jpg", self.frame
-                )
+                cv2.imwrite(os.path.join(filepath, str(sample_num) + ".jpg"), frame)
 
             cv2.imshow("Video", frame)
 
             cv2.waitKey(1)
-            if sample_num > total_num:
+            if sample_num >= total_num:
                 print("录入结束")
                 break
 
@@ -95,24 +93,29 @@ class face_recognition_gui(object):
         print("KNN分类器训练完成！")
         return classifier
 
-    def scan_face(self, model_path="knn_examples/trained_knn_model.clf"):
+    def scan_face(
+        self, model_path="knn_examples/trained_knn_model.clf", distance_threshold=0.6
+    ):
         """不断调用摄像头扫描并做人脸识别，按q退出
 
         Args:
             model_path (str, optional): 存放KNN分类器的位置. Defaults to "knn_examples/trained_knn_model.clf".
+            distance_threshold (int, optional): 分类器的阈值,该值越大越容易将未知人脸识别成已知人脸. Defaults to 0.6
         """
 
         print("正在扫描人脸：")
 
-        while True:
+        while self.camera.isOpened():
             # Grab a single frame of video
-            frame = self.frame.copy()
+            success, frame = self.camera.read()
 
             # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
             rgb_frame = frame[:, :, ::-1]
 
             # Find all the faces and face enqcodings in the frame of video
-            predictions = predict(rgb_frame, model_path=model_path)
+            predictions = predict(
+                rgb_frame, model_path=model_path, distance_threshold=distance_threshold
+            )
 
             # Loop through each face in this frame of video
             for name, (top, right, bottom, left) in predictions:
@@ -145,5 +148,7 @@ if __name__ == "__main__":
     video_capture = cv2.VideoCapture(0)
 
     gui = face_recognition_gui(video_capture)
-    gui.scan_face()
+    # gui.get_new_face(name="cxx")
+    # gui.train_new_face()
+    gui.scan_face(distance_threshold=0.38)
     gui.destroy()
