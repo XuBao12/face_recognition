@@ -19,8 +19,8 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
         self.cap = cv2.VideoCapture()
         self.src_image = None
 
-        self.stopEvent = threading.Event()  # 默认是False
         self.lock = threading.Lock()
+        self.system_state_lock = 0  # 标志系统状态的量 0表示无子线程在运行 1表示调用摄像头 2表示正在人脸识别 3表示正在录入新面孔。
 
         self.background()
 
@@ -32,7 +32,7 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
         # 按钮
         self.pushButton.clicked.connect(self.open_camera)  # 打开摄像头
         self.pushButton_2.clicked.connect(self.close_camera)  # 关闭摄像头
-        self.pushButton_4.clicked.connect(self.face_recognition.scan_face)
+        self.pushButton_4.clicked.connect(self.scan_face)  # 人脸识别
 
         self.pushButton.setEnabled(True)
         # 初始状态不能关闭摄像头
@@ -47,16 +47,17 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
         if flag is False:
             QMessageBox.information(self, "警告", "该设备未正常连接", QMessageBox.Ok)
         else:
-            self.stopEvent.clear()
-            th = threading.Thread(target=self.Display)
-            th.start()
+            self.system_state_lock = 1
+            th1 = threading.Thread(target=self.Display)
+            th1.setDaemon(True)
+            th1.start()
             # 打开摄像头按钮不能点击
             self.pushButton.setEnabled(False)
             # 关闭摄像头按钮可以点击
             self.pushButton_2.setEnabled(True)
 
     def Display(self):
-        while self.cap.isOpened() and not self.stopEvent.is_set():
+        while self.cap.isOpened() and self.system_state_lock == 1:
             ret, frame = self.cap.read()
             if ret:
                 self.lock.acquire()
@@ -77,16 +78,15 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
 
                 cv2.waitKey(1)
 
-        self.stopEvent.clear()
+    def scan_face(self):
+        pass
 
     def close_camera(self):
-        self.stopEvent.set()
+        self.system_state_lock = 0
         self.cap.release()
         self.label.clear()
         self.pushButton.setEnabled(True)
         self.pushButton_2.setEnabled(False)
-
-
 
 
 if __name__ == "__main__":
