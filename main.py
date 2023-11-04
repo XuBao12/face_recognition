@@ -244,12 +244,17 @@ class face_recognition_UI(QMainWindow, Ui_MainWindow):
             print("KNN分类器训练完成！")
             return classifier
 
-        QMessageBox.information(self, "人脸采集", "开始录入新人脸", QMessageBox.Ok)
+        name, have_user_name = QInputDialog.getText(
+            self, "录入人脸", "请输入姓名:", QLineEdit.Normal, ""
+        )
+        if not have_user_name:
+            return
+
         self.system_state_lock = 3
         self.pushButton_3.setEnabled(False)
         self.pushButton_4.setEnabled(False)
         self.pushButton_5.setEnabled(False)
-        get_new_face(self, name="cxx")
+        get_new_face(self, name=name)
 
         self.system_state_lock = 4
         train_new_face(self)
