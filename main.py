@@ -15,7 +15,7 @@ from knn_webcam import train, predict
 import face_recognition
 
 
-class multithread_UI(QMainWindow, Ui_MainWindow):
+class face_recognition_UI(QMainWindow, Ui_MainWindow):
     def __init__(
         self, model_path="knn_examples/trained_knn_model.clf", distance_threshold=0.38
     ):
@@ -25,7 +25,9 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
         self.model_path = model_path
         self.distance_threshold = distance_threshold
 
-        self.system_state_lock = 0  # 标志系统状态的量 0表示无子线程在运行 1表示调用摄像头 2表示正在人脸识别 3表示正在录入新面孔。
+        self.system_state_lock = (
+            0  # 标志系统状态的量 0表示无子线程在运行 1表示调用摄像头 2表示正在人脸识别 3表示正在录入新面孔 4表示正在训练新面孔。
+        )
 
         self.background()
 
@@ -37,32 +39,41 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
         # 按钮
         self.pushButton.clicked.connect(self.open_camera)  # 打开摄像头
         self.pushButton_2.clicked.connect(self.close_camera)  # 关闭摄像头
+        self.pushButton_2.clicked.connect(self.f_get_new_face)  # 录入新人脸
         self.pushButton_4.clicked.connect(self.scan_face)  # 人脸识别
-        self.pushButton_5.clicked.connect(self.Display)
+        self.pushButton_5.clicked.connect(self.stop_scan_face)  # 退出识别
 
+        self.init_UI_state()
+
+    def init_UI_state(self):
+        """UI初始化"""
         self.pushButton.setEnabled(True)
         self.pushButton_2.setEnabled(False)
         self.pushButton_3.setEnabled(False)
         self.pushButton_4.setEnabled(False)
         self.pushButton_5.setEnabled(False)
+        self.label.clear()
+
+        # TODO:可以在界面最顶部加个显示当前状态，while True
 
     def open_camera(self):
         # 获取选择的设备名称
-        index = self.comboBox.currentIndex()
-        self.CAM_NUM = index
-        # 检测该设备是否能打开
-        flag = self.camera.open(self.CAM_NUM)
-        if flag is False:
-            QMessageBox.information(self, "警告", "该设备未正常连接", QMessageBox.Ok)
-        else:
-            self.pushButton.setEnabled(False)  # 打开摄像头按钮不能点击
-            self.pushButton_2.setEnabled(True)  # 关闭摄像头按钮可以点击
-            self.pushButton_3.setEnabled(True)
-            self.pushButton_4.setEnabled(True)
-            self.Display()
+        if self.system_state_lock == 0:
+            index = self.comboBox.currentIndex()
+            self.CAM_NUM = index
+            # 检测该设备是否能打开
+            flag = self.camera.open(self.CAM_NUM)
+            if flag is False:
+                QMessageBox.information(self, "警告", "该设备未正常连接", QMessageBox.Ok)
+            else:
+                self.pushButton.setEnabled(False)
+                self.pushButton_2.setEnabled(True)
+                self.pushButton_3.setEnabled(True)
+                self.pushButton_4.setEnabled(True)
+                self.system_state_lock = 1
+                self.display_camera()
 
-    def Display(self):
-        self.system_state_lock = 1
+    def display_camera(self):
         while self.camera.isOpened() and self.system_state_lock == 1:
             ret, frame = self.camera.read()
             if ret:
@@ -83,11 +94,10 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
     def scan_face(self):
         """不断调用摄像头扫描并做人脸识别"""
 
-        self.system_state_lock = 2  # TODO
+        self.check_system_state()
         self.pushButton_4.setEnabled(False)
         self.pushButton_5.setEnabled(True)
-
-        print("正在扫描人脸：")
+        self.system_state_lock = 2
 
         while self.camera.isOpened() and self.system_state_lock == 2:
             # Grab a single frame of video
@@ -142,16 +152,30 @@ class multithread_UI(QMainWindow, Ui_MainWindow):
 
             cv2.waitKey(1)
 
+    def stop_scan_face(self):
+        self.system_state_lock = 1
+        self.pushButton_4.setEnabled(True)
+        self.pushButton_5.setEnabled(False)
+        self.display_camera()
+
     def close_camera(self):
         self.system_state_lock = 0
         self.camera.release()
-        self.label.clear()
-        self.pushButton.setEnabled(True)
-        self.pushButton_2.setEnabled(False)
+        self.init_UI_state()
+
+    def check_system_state(self):
+        if self.system_state_lock == 0:
+            QMessageBox.information(self, "警告", "摄像头未启用", QMessageBox.Ok)
+        elif self.system_state_lock == 2:
+            QMessageBox.information(self, "警告", "正在识别人脸", QMessageBox.Ok)
+        elif self.system_state_lock == 3:
+            QMessageBox.information(self, "警告", "正在录入新人脸", QMessageBox.Ok)
+        elif self.system_state_lock == 4:
+            QMessageBox.information(self, "警告", "正在训练新人脸", QMessageBox.Ok)
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    w = multithread_UI()
+    w = face_recognition_UI()
     w.show()
     sys.exit(app.exec_())
