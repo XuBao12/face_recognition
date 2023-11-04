@@ -1,107 +1,157 @@
-import face_recognition
+import sys
+import typing
+from PyQt5 import QtCore, QtGui
+import copy
 import cv2
 import numpy as np
 
-# This is a super simple (but slow) example of running face recognition on live video from your webcam.
-# There's a second example that's a little more complicated but runs faster.
+from PyQt5.QtWidgets import QMessageBox, QFileDialog, QLineEdit, QWidget
+from PyQt5.QtGui import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import *
+from resource.UI.Ui_face_recognition_gui import Ui_MainWindow
 
-# PLEASE NOTE: This example requires OpenCV (the `cv2` library) to be installed only to read from your webcam.
-# OpenCV is *not* required to use the face_recognition library. It's only required if you want to run this
-# specific demo. If you have trouble installing it, try any of the other demos that don't require it instead.
+from knn_webcam import train, predict
+import face_recognition
 
-# Get a reference to webcam #0 (the default one)
-video_capture = cv2.VideoCapture(0)
 
-# Load a sample picture and learn how to recognize it.
-obama_image = face_recognition.load_image_file(
-    r"E:\CodeField\Github_Project\face_recognition\examples\obama.jpg"
-)
-obama_face_encoding = face_recognition.face_encodings(obama_image)[0]
-
-# Load a second sample picture and learn how to recognize it.
-biden_image = face_recognition.load_image_file(
-    r"E:\CodeField\Github_Project\face_recognition\examples\biden.jpg"
-)
-biden_face_encoding = face_recognition.face_encodings(biden_image)[0]
-
-# image_encoding = face_recognition.face_encodings(image)
-#     if len(per_image_encoding)>0:
-#         # 获取检测到人脸时面部编码信息中第一个面部编码
-#         first_image_encoding = image_encoding[0]
-#     else:
-#     	print("未检测到有效人脸区域！")
-
-cxx_image = face_recognition.load_image_file(
-    r"E:\CodeField\Github_Project\face_recognition\examples\cxx.jpg"
-)
-cxx_face_encoding = face_recognition.face_encodings(cxx_image)[0]
-
-zy_image = face_recognition.load_image_file(r"face\zy.jpg")
-zy_face_encoding = face_recognition.face_encodings(zy_image)[0]
-
-yzy_image = face_recognition.load_image_file(r"face\yzy.jpg")
-yzy_face_encoding = face_recognition.face_encodings(yzy_image)[0]
-
-# Create arrays of known face encodings and their names
-known_face_encodings = [
-    obama_face_encoding,
-    biden_face_encoding,
-    cxx_face_encoding,
-    zy_face_encoding,
-    yzy_face_encoding
-]
-known_face_names = ["Barack Obama", "Joe Biden", "cxx", "zy", "yzy"]
-
-while True:
-    # Grab a single frame of video
-    ret, frame = video_capture.read()
-
-    # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
-    rgb_frame = frame[:, :, ::-1]
-
-    # Find all the faces and face enqcodings in the frame of video
-    face_locations = face_recognition.face_locations(rgb_frame)
-    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-
-    # Loop through each face in this frame of video
-    for (top, right, bottom, left), face_encoding in zip(
-        face_locations, face_encodings
+class multithread_UI(QMainWindow, Ui_MainWindow):
+    def __init__(
+        self, model_path="knn_examples/trained_knn_model.clf", distance_threshold=0.38
     ):
-        # See if the face is a match for the known face(s)
-        matches = face_recognition.compare_faces(known_face_encodings, face_encoding)
+        super().__init__()
+        self.setupUi(self)
+        self.camera = cv2.VideoCapture()
+        self.model_path = model_path
+        self.distance_threshold = distance_threshold
 
-        name = "Unknown"
+        self.system_state_lock = 0  # 标志系统状态的量 0表示无子线程在运行 1表示调用摄像头 2表示正在人脸识别 3表示正在录入新面孔。
 
-        # If a match was found in known_face_encodings, just use the first one.
-        # if True in matches:
-        #     first_match_index = matches.index(True)
-        #     name = known_face_names[first_match_index]
+        self.background()
 
-        # Or instead, use the known face with the smallest distance to the new face
-        face_distances = face_recognition.face_distance(
-            known_face_encodings, face_encoding
-        )
-        best_match_index = np.argmin(face_distances)
-        if matches[best_match_index]:
-            name = known_face_names[best_match_index]
+    def closeEvent(self, event):
+        super().closeEvent(event)
+        self.close_camera()
 
-        # Draw a box around the face
-        cv2.rectangle(frame, (left, top), (right, bottom), (0, 0, 255), 2)
+    def background(self):
+        # 按钮
+        self.pushButton.clicked.connect(self.open_camera)  # 打开摄像头
+        self.pushButton_2.clicked.connect(self.close_camera)  # 关闭摄像头
+        self.pushButton_4.clicked.connect(self.scan_face)  # 人脸识别
+        self.pushButton_5.clicked.connect(self.Display)
 
-        # Draw a label with a name below the face
-        cv2.rectangle(
-            frame, (left, bottom - 35), (right, bottom), (0, 0, 255), cv2.FILLED
-        )
-        font = cv2.FONT_HERSHEY_DUPLEX
-        cv2.putText(frame, name, (left + 6, bottom - 6), font, 1.0, (255, 255, 255), 1)
+        self.pushButton.setEnabled(True)
+        self.pushButton_2.setEnabled(False)
+        self.pushButton_3.setEnabled(False)
+        self.pushButton_4.setEnabled(False)
+        self.pushButton_5.setEnabled(False)
 
-    # Display the resulting image
-    cv2.imshow("Video", frame)
+    def open_camera(self):
+        # 获取选择的设备名称
+        index = self.comboBox.currentIndex()
+        self.CAM_NUM = index
+        # 检测该设备是否能打开
+        flag = self.camera.open(self.CAM_NUM)
+        if flag is False:
+            QMessageBox.information(self, "警告", "该设备未正常连接", QMessageBox.Ok)
+        else:
+            self.pushButton.setEnabled(False)  # 打开摄像头按钮不能点击
+            self.pushButton_2.setEnabled(True)  # 关闭摄像头按钮可以点击
+            self.pushButton_3.setEnabled(True)
+            self.pushButton_4.setEnabled(True)
+            self.Display()
 
-    # Hit 'q' on the keyboard to quit!
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
+    def Display(self):
+        self.system_state_lock = 1
+        while self.camera.isOpened() and self.system_state_lock == 1:
+            ret, frame = self.camera.read()
+            if ret:
+                cur_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                # 视频流的长和宽
+                height, width = cur_frame.shape[:2]
+                pixmap = QImage(cur_frame, width, height, QImage.Format_RGB888)
+                pixmap = QPixmap.fromImage(pixmap)
+                # 获取是视频流和label窗口的长宽比值的最大值，适应label窗口播放，不然显示不全
+                ratio = max(width / self.label.width(), height / self.label.height())
+                pixmap.setDevicePixelRatio(ratio)
+                # 视频流置于label中间部分播放
+                self.label.setAlignment(Qt.AlignCenter)
+                self.label.setPixmap(pixmap)
 
-# Release handle to the webcam
-video_capture.release()
-cv2.destroyAllWindows()
+                cv2.waitKey(1)
+
+    def scan_face(self):
+        """不断调用摄像头扫描并做人脸识别"""
+
+        self.system_state_lock = 2  # TODO
+        self.pushButton_4.setEnabled(False)
+        self.pushButton_5.setEnabled(True)
+
+        print("正在扫描人脸：")
+
+        while self.camera.isOpened() and self.system_state_lock == 2:
+            # Grab a single frame of video
+            ret, frame = self.camera.read()
+
+            # Convert the image from BGR color (which OpenCV uses) to RGB color (which face_recognition uses)
+            cur_frame = frame[:, :, ::-1]
+
+            # Find all the faces and face enqcodings in the frame of video
+            predictions = predict(
+                cur_frame,
+                model_path=self.model_path,
+                distance_threshold=self.distance_threshold,
+            )
+            # predictions = [("cxx", (20, 400, 400, 100))]  # 测试bug用
+
+            cur_frame = np.ascontiguousarray(cur_frame)
+
+            # Loop through each face in this frame of video
+            for name, (top, right, bottom, left) in predictions:
+                # Draw a box around the face
+                cv2.rectangle(cur_frame, (left, top), (right, bottom), (0, 0, 255), 2)
+
+                # Draw a label with a name below the face
+                cv2.rectangle(
+                    cur_frame,
+                    (left, bottom - 35),
+                    (right, bottom),
+                    (0, 0, 255),
+                    cv2.FILLED,
+                )
+                font = cv2.FONT_HERSHEY_DUPLEX
+                cv2.putText(
+                    cur_frame,
+                    name,
+                    (left + 6, bottom - 6),
+                    font,
+                    1.0,
+                    (255, 255, 255),
+                    1,
+                )
+
+            height, width = cur_frame.shape[:2]
+            pixmap = QImage(cur_frame, width, height, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(pixmap)
+            # 获取是视频流和label窗口的长宽比值的最大值，适应label窗口播放，不然显示不全
+            ratio = max(width / self.label.width(), height / self.label.height())
+            pixmap.setDevicePixelRatio(ratio)
+            # 视频流置于label中间部分播放
+            self.label.setAlignment(Qt.AlignCenter)
+            self.label.setPixmap(pixmap)
+
+            cv2.waitKey(1)
+
+    def close_camera(self):
+        self.system_state_lock = 0
+        self.camera.release()
+        self.label.clear()
+        self.pushButton.setEnabled(True)
+        self.pushButton_2.setEnabled(False)
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    w = multithread_UI()
+    w.show()
+    sys.exit(app.exec_())

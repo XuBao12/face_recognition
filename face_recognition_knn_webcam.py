@@ -148,7 +148,7 @@ if __name__ == "__main__":
     video_capture = cv2.VideoCapture(0)
 
     gui = face_recognition_gui(video_capture)
-    # gui.get_new_face(name="cxx")
-    # gui.train_new_face()
-    gui.scan_face(distance_threshold=0.38)
+    gui.get_new_face(total_num=10, name="cxx")
+    gui.train_new_face()
+    # gui.scan_face(distance_threshold=0.38)
     gui.destroy()
